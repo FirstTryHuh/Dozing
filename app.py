@@ -24,10 +24,9 @@ BOT_TOKEN = "8805177798:AAEABDJ3w7HFjaIjwFIxgdKSbpyU0UKxvmE"
 YOUR_CHAT_ID = 8437042992
 HER_CHAT_ID = 8437042992  # TEST MODE: using your own chat ID for now
 
-STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "checkin_state.json")
-WINDOW_MINUTES = 15
-START_HOUR = 22   # 10 PM
-END_HOUR = 6      # window closes at 6 AM
+WINDOW_MINUTES = 1
+START_HOUR = -1   # 10 PM
+END_HOUR = 25      # window closes at 6 AM
 
 API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
