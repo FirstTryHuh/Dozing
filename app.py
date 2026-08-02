@@ -15,8 +15,13 @@ Send /stop to the bot at any time to force state to "done" for the night.
 import json
 import os
 import requests
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from flask import Flask
+
+VN_TZ = timezone(timedelta(hours=7))
+
+def local_now():
+    return datetime.now(VN_TZ)
 
 app = Flask(__name__)
 
@@ -43,16 +48,45 @@ def get_updates(offset=None):
     return resp.json().get("result", [])
 
 
+def get_pinned_state_message():
+    """Returns (message_id, state_dict) from the pinned message in YOUR_CHAT_ID, or (None, None)."""
+    resp = requests.get(f"{API_URL}/getChat", params={"chat_id": YOUR_CHAT_ID}, timeout=10)
+    data = resp.json()
+    pinned = data.get("result", {}).get("pinned_message")
+    if not pinned:
+        return None, None
+    text = pinned.get("text", "")
+    if not text.startswith("STATE::"):
+        return None, None
+    try:
+        state = json.loads(text[len("STATE::"):])
+        return pinned["message_id"], state
+    except (json.JSONDecodeError, KeyError):
+        return None, None
+
+
 def load_state():
-    if not os.path.exists(STATE_FILE):
+    _, state = get_pinned_state_message()
+    if state is None:
         return {"status": "idle", "ping_time": None, "last_update_id": None, "date": None}
-    with open(STATE_FILE) as f:
-        return json.load(f)
+    return state
 
 
 def save_state(state):
-    with open(STATE_FILE, "w") as f:
-        json.dump(state, f)
+    text = "STATE::" + json.dumps(state)
+    message_id, _ = get_pinned_state_message()
+
+    if message_id is None:
+        # No pinned state message yet — create and pin one
+        resp = requests.post(f"{API_URL}/sendMessage", data={"chat_id": YOUR_CHAT_ID, "text": text})
+        new_id = resp.json()["result"]["message_id"]
+        requests.post(f"{API_URL}/pinChatMessage", data={
+            "chat_id": YOUR_CHAT_ID, "message_id": new_id, "disable_notification": True
+        })
+    else:
+        requests.post(f"{API_URL}/editMessageText", data={
+            "chat_id": YOUR_CHAT_ID, "message_id": message_id, "text": text
+        })
 
 
 def in_active_window(now):
@@ -77,7 +111,7 @@ def check_for_reply_or_stop(last_update_id):
 
 
 def run_tick():
-    now = datetime.now()
+    now = local_now()
     today_str = now.strftime("%Y-%m-%d")
 
     if not in_active_window(now):
@@ -93,7 +127,7 @@ def run_tick():
         return "Already resolved for tonight, doing nothing."
 
     if state["status"] == "idle":
-        send_message(YOUR_CHAT_ID, "You awake? Reply anything within 15 min. (or /stop to cancel tonight)")
+        send_message(YOUR_CHAT_ID, "Còn thức không? Nhắn gì đi!")
         state["status"] = "waiting"
         state["ping_time"] = now.isoformat()
         state["date"] = today_str
@@ -107,7 +141,7 @@ def run_tick():
         if result == "replied":
             state["status"] = "idle"
             save_state(state)
-            return "Reply received, back to idle."
+            return run_tick()
 
         if result == "stop":
             state["status"] = "done"
@@ -119,8 +153,11 @@ def run_tick():
         elapsed_minutes = (now - ping_time).total_seconds() / 60
 
         if elapsed_minutes >= WINDOW_MINUTES:
-            send_message(HER_CHAT_ID, "Hey — he didn't check in tonight, might've dozed off 💤")
-            send_message(YOUR_CHAT_ID, "No reply detected — alert sent. Stopping for tonight.")
+            send_message(HER_CHAT_ID, "Môm iuuuu uii:3")
+            send_message(HER_CHAT_ID, "Bé ngụ quên gồi bé xin lỗiii:(((")
+            send_message(HER_CHAT_ID, "Môm iuuuu tha lỗi choa bé nhóooo:(((")
+            send_message(HER_CHAT_ID, "Hoi môm đi ngụ đi đừn đựi bé nhóo:3")
+            send_message(YOUR_CHAT_ID, "Mày ngủ quên rồi sáng mai no đòn >:3")
             state["status"] = "done"
             save_state(state)
             return "No reply in time, alert sent, done for tonight."
@@ -139,7 +176,17 @@ def tick():
 def home():
     return {"status": "check-in bot is running"}
 
+@app.route("/flip")
+def flip():
+    state = load_state()
+    if state["status"]=="done":
+        state["status"] = "idle"
+    else:
+        state["status"] = "done"
+    save_state(state)
+    return {"result": state["status"]}
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
